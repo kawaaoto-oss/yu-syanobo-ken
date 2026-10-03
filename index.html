@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>アクションゲーム - 勇者と魔王のダンジョン</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=DotGothic16&display=swap');
+        
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+            color: #fff;
+            font-family: 'DotGothic16', sans-serif;
+            user-select: none;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            image-rendering: pixelated;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .screen {
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 40px;
+            border-radius: 8px;
+            text-align: center;
+            pointer-events: auto;
+            border: 4px solid #fff;
+            box-shadow: inset 0 0 0 4px #000, 0 0 10px rgba(0,0,0,0.5);
+            min-width: 450px;
+        }
+        .screen.active {
+            display: flex;
+        }
+        h1 { margin-top: 0; font-size: 3rem; text-shadow: 2px 2px 0 #000; letter-spacing: 2px; }
+        p { font-size: 1.5rem; line-height: 1.6; }
+        button {
+            margin-top: 25px;
+            padding: 10px 30px;
+            font-size: 1.5rem;
+            font-family: 'DotGothic16', sans-serif;
+            background-color: #000;
+            color: white;
+            border: 2px solid #fff;
+            cursor: pointer;
+            transition: all 0.1s;
+        }
+        button:hover { background-color: #333; }
+        button:active { transform: scale(0.95); }
+        
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 1.5rem;
+            text-shadow: 2px 2px 0 #000;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            background: rgba(0,0,0,0.5);
+            padding: 15px;
+            border: 2px solid #fff;
+            border-radius: 5px;
+        }
+        #hp-display { color: #e74c3c; font-size: 2rem; letter-spacing: 5px; }
+        
+        #boss-hud {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: none;
+            flex-direction: column;
+            align-items: flex-end;
+            background: rgba(0,0,0,0.6);
+            padding: 10px 20px;
+            border: 2px solid #e74c3c;
+            border-radius: 5px;
+            z-index: 10;
+        }
+        #boss-name { font-size: 1.3rem; color: #e74c3c; margin-bottom: 5px; text-shadow: 1px 1px 0 #000; }
+        #boss-hp-container {
+            width: 300px;
+            height: 20px;
+            background: #222;
+            border: 2px solid #fff;
+        }
+        #boss-hp-bar {
+            width: 100%;
+            height: 100%;
+            background: #e74c3c;
+            transition: width 0.1s;
+        }
+
+        .controls-info { margin-top: 15px; font-size: 1.1rem; color: #ddd; text-align: left; }
+        
+        #charge-container {
+            width: 250px;
+            height: 20px;
+            background: #222;
+            border: 2px solid #fff;
+            margin-top: 5px;
+            position: relative;
+        }
+        #charge-bar {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #f39c12, #e74c3c);
+        }
+        #charge-text {
+            position: absolute;
+            top: -2px;
+            left: 5px;
+            font-size: 1rem;
+            color: white;
+            text-shadow: 1px 1px 0 #000;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="hud" style="display: none;">
+        <div style="color:#f1c40f;">ダンジョン <span id="stageVal">1</span> <span style="font-size:1.2rem; color:#fff;">(討伐: <span id="scoreVal">0</span>/<span id="targetVal">15</span>)</span></div>
+        <div id="hp-display">❤️❤️❤️</div>
+        <div id="charge-container">
+            <div id="charge-bar"></div>
+            <div id="charge-text">必殺技 (Q長押し): 0%</div>
+        </div>
+    </div>
+
+    <div id="boss-hud">
+        <div id="boss-name">ボス名</div>
+        <div id="boss-hp-container">
+            <div id="boss-hp-bar"></div>
+        </div>
+    </div>
+
+    <div id="ui-layer">
+        <div id="startScreen" class="screen active">
+            <h1 style="color: #f1c40f;">勇者の大冒険: 覚醒</h1>
+            <p>二段ジャンプとダッシュを駆使し、<br>遠距離攻撃の敵や凶悪なボスを倒せ！</p>
+            <div class="controls-info">
+                ▶ [←][→]: 移動<br>
+                ▶ [A] (2回): ジャンプ / 二段ジャンプ<br>
+                ▶ [Shift]: ダッシュ回避<br>
+                ▶ [Z]: しゃがむ<br>
+                ▶ [Space]: 剣攻撃<br>
+                ▶ [Q]キー長押し: 必殺技魔法発動！
+            </div>
+            <button id="startBtn">冒険に出発する</button>
+        </div>
+
+        <div id="stageClearScreen" class="screen">
+            <h1 style="color: #3498db;">ダンジョン クリア！</h1>
+            <p>階段を見つけた！<br>さらに奥の階層へ進みます...</p>
+            <button id="nextStageBtn">次の階へ</button>
+        </div>
+
+        <div id="gameOverScreen" class="screen">
+            <h1 style="color: #e74c3c;">おお ゆうしゃよ！<br>しんでしまうとは なにごとだ！</h1>
+            <p>到達ダンジョン: <span id="finalStageVal">1</span></p>
+            <button id="restartBtn">生き返る</button>
+        </div>
+
+        <div id="clearScreen" class="screen">
+            <h1 style="color: #2ecc71;">完全勝利・ゲームクリア！</h1>
+            <p>魔王を討伐し、世界に平和が戻りました！<br>おめでとう！</p>
+            <button id="restartBtnClear">もう一度遊ぶ</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        const screens = {
+            START: document.getElementById('startScreen'),
+            STAGE_CLEAR: document.getElementById('stageClearScreen'),
+            GAMEOVER: document.getElementById('gameOverScreen'),
+            CLEAR: document.getElementById('clearScreen')
+        };
+        const hud = document.getElementById('hud');
+        const bossHud = document.getElementById('boss-hud');
+        const bossHpBar = document.getElementById('boss-hp-bar');
+        const bossNameElem = document.getElementById('boss-name');
+        const hpDisplay = document.getElementById('hp-display');
+        const scoreVal = document.getElementById('scoreVal');
+        const targetVal = document.getElementById('targetVal');
+        const stageVal = document.getElementById('stageVal');
+        const finalStageVal = document.getElementById('finalStageVal');
+        const chargeBar = document.getElementById('charge-bar');
+        const chargeText = document.getElementById('charge-text');
+
+        let GAME_WIDTH = window.innerWidth;
+        let GAME_HEIGHT = window.innerHeight;
+        let GROUND_Y = GAME_HEIGHT - 120;
+
+        window.addEventListener('resize', () => {
+            GAME_WIDTH = window.innerWidth;
+            GAME_HEIGHT = window.innerHeight;
+            canvas.width = GAME_WIDTH;
+            canvas.height = GAME_HEIGHT;
+            GROUND_Y = GAME_HEIGHT - 120;
+        });
+        canvas.width = GAME_WIDTH;
+        canvas.height = GAME_HEIGHT;
+
+        let gameState = 'START'; 
+        let scoreInStage = 0;
+        let currentStage = 1;
+        let targetScorePerStage = 15;
+        const MAX_STAGE = 3;
+        let bossFightActive = false;
+        let currentBoss = null;
+
+        const stageData = [
+            { bg: '#5cb85c', sky: '#87CEEB', ground: '#8B4513', target: 5, hasTraps: false }, // テスト用に5体に設定するとすぐボスを確認できます
+            { bg: '#333333', sky: '#111122', ground: '#444444', target: 15, hasTraps: true },  
+            { bg: '#483D8B', sky: '#191970', ground: '#2F4F4F', target: 18, hasTraps: true }    
+        ];
+
+        const keys = { ArrowLeft: false, ArrowRight: false, a: false, A: false, z: false, Z: false, ' ': false, q: false, Q: false, Shift: false };
+        let lastDir = -1; 
+        let jumpKeyWasPressed = false;
+
+        window.addEventListener('keydown', e => {
+            if (keys.hasOwnProperty(e.key) || ['a', 'A', 'z', 'Z', ' ', 'q', 'Q', 'Shift'].includes(e.key)) {
+                if(e.key === ' ' || e.key === 'q' || e.key === 'Q') e.preventDefault();
+                keys[e.key] = true;
+            }
+        });
+        window.addEventListener('keyup', e => {
+            if (keys.hasOwnProperty(e.key) || ['a', 'A', 'z', 'Z', ' ', 'q', 'Q', 'Shift'].includes(e.key)) {
+                keys[e.key] = false;
+                if (e.key === 'a' || e.key === 'A') jumpKeyWasPressed = false;
+            }
+        });
+
+        let player = {};
+        let enemies = [];
+        let items = [];
+        let projectiles = [];
+        let enemyProjectiles = [];
+        let traps = [];
+        let particles = [];
+        let attackHitbox = null;
+        let specialAttackEffect = 0;
+
+        function setScreen(state) {
+            gameState = state;
+            Object.values(screens).forEach(s => s.classList.remove('active'));
+            if (screens[state]) screens[state].classList.add('active');
+            hud.style.display = (state === 'PLAYING') ? 'flex' : 'none';
+            if (state !== 'PLAYING') bossHud.style.display = 'none';
+        }
+
+        function initGame() {
+            currentStage = 1;
+            initStage(true);
+        }
+
+        function initStage(fullReset = false) {
+            scoreInStage = 0;
+            targetScorePerStage = stageData[currentStage - 1].target;
+            scoreVal.innerText = scoreInStage;
+            targetVal.innerText = targetScorePerStage;
+            stageVal.innerText = currentStage;
+            
+            enemies = [];
+            items = [];
+            projectiles = [];
+            enemyProjectiles = [];
+            traps = [];
+            particles = [];
+            attackHitbox = null;
+            specialAttackEffect = 0;
+            bossFightActive = false;
+            currentBoss = null;
+            bossHud.style.display = 'none';
+
+            if (fullReset) {
+                player = {
+                    x: GAME_WIDTH - 150,
+                    y: GROUND_Y - 95,
+                    width: 55,
+                    height: 95,
+                    vx: 0,
+                    vy: 0,
+                    speed: 5.5,
+                    jumpPower: -14,
+                    gravity: 0.75,
+                    isGrounded: false,
+                    jumpCount: 0,
+                    maxJumps: 2,
+                    isCrouching: false,
+                    isDash: false,
+                    dashTimer: 0,
+                    dashCooldown: 0,
+                    attackCooldown: 0,
+                    attackDuration: 0, 
+                    hp: 3,
+                    damageInvincibleTimer: 0,
+                    charge: 0, 
+                    maxCharge: 500,
+                    invincibleTimer: 0,
+                    bigSwordTimer: 0,
+                    throwSwordTimer: 0
+                };
+                lastDir = -1; 
+            } else {
+                player.x = GAME_WIDTH - 150;
+                player.y = GROUND_Y - player.height;
+                player.vx = 0;
+                player.vy = 0;
+                player.damageInvincibleTimer = 0;
+                player.charge = 0;
+                lastDir = -1;
+            }
+            
+            updateHpDisplay();
+            setScreen('PLAYING');
+        }
+        
+        function updateHpDisplay() {
+            let hearts = '';
+            for(let i=0; i<player.hp; i++) hearts += '❤️';
+            for(let i=player.hp; i<3; i++) hearts += '🖤';
+            hpDisplay.innerText = hearts;
+        }
+
+        function checkCollision(rect1, rect2) {
+            return (
+                rect1.x < rect2.x + rect2.width &&
+                rect1.x + rect1.width > rect2.x &&
+                rect1.y < rect2.y + rect2.height &&
+                rect1.y + rect1.height > rect2.y
+            );
+        }
+
+        function createParticles(x, y, color, count=15, speedMultiplier=1) {
+            for(let i=0; i<count; i++) {
+                particles.push({
+                    x: x, y: y,
+                    vx: (Math.random() - 0.5) * 10 * speedMultiplier,
+                    vy: (Math.random() - 0.5) * 10 * speedMultiplier,
+                    life: 20 + Math.random() * 20,
+                    color: color
+                });
+            }
+        }
+
+        function spawnTraps() {
+            if (stageData[currentStage - 1].hasTraps && Math.random() < 0.008 && traps.length < 3) {
+                traps.push({
+                    x: Math.random() * (GAME_WIDTH - 300) + 100,
+                    y: -50,
+                    width: 30,
+                    height: 40,
+                    vy: 4 + currentStage
+                });
+            }
+        }
+
+        function spawnEnemy() {
+            if (bossFightActive) return;
+
+            if (scoreInStage >= targetScorePerStage && !bossFightActive) {
+                startBossFight();
+                return;
+            }
+
+            let spawnRate = 0.01 + (currentStage * 0.003);
+            if (Math.random() < spawnRate) {
+                let isArcher = Math.random() < 0.3 && currentStage >= 2;
+                let isFast = Math.random() < 0.2;
+                let isBig = Math.random() < 0.15;
+                
+                let eW = isBig ? 60 : 40;
+                let eH = isBig ? 50 : 35;
+
+                enemies.push({
+                    x: -100,
+                    y: GROUND_Y - eH,
+                    width: eW,
+                    height: eH,
+                    vx: isArcher ? 1.5 : (2 + Math.random() * 1.5),
+                    hp: isBig ? 2 : 1,
+                    type: isArcher ? 'archer' : (isFast ? 'fast' : (isBig ? 'big' : 'normal')),
+                    color: isArcher ? '#e67e22' : (isFast ? '#e74c3c' : (isBig ? '#8e44ad' : '#3498db')),
+                    wobble: Math.random() * 10,
+                    invul: 0,
+                    attackTimer: 0
+                });
+            }
+        }
+
+        function startBossFight() {
+            bossFightActive = true;
+            enemies = []; 
+            bossHud.style.display = 'flex';
+            
+            let bossInfo = [
+                { name: '【中ボス】アーマースライム王', hp: 15, maxHp: 15, color: '#d35400', width: 90, height: 80, isSpecialBoss: false },
+                { name: '【上級ボス】ダーク・ゴーレム', hp: 25, maxHp: 25, color: '#c0392b', width: 100, height: 90, isSpecialBoss: true, style: 'golem' },
+                { name: '【ラスボス】魔王要塞', hp: 40, maxHp: 40, color: '#8e44ad', width: 120, height: 100, isSpecialBoss: true, style: 'demon' }
+            ];
+
+            let info = bossInfo[currentStage - 1];
+            currentBoss = {
+                x: 100, // 画面内に確実に表示される位置からスタート
+                y: GROUND_Y - info.height,
+                width: info.width,
+                height: info.height,
+                vx: 2,
+                hp: info.hp,
+                maxHp: info.maxHp,
+                name: info.name,
+                color: info.color,
+                wobble: 0,
+                invul: 0,
+                skillTimer: 0,
+                isSpecialBoss: info.isSpecialBoss,
+                style: info.style
+            };
+            bossNameElem.innerText = currentBoss.name;
+            bossHpBar.style.width = '100%';
+        }
+
+        function endBossFight() {
+            bossFightActive = false;
+            bossHud.style.display = 'none';
+            currentBoss = null;
+            if (currentStage < MAX_STAGE) {
+                setScreen('STAGE_CLEAR');
+            } else {
+                setScreen('CLEAR');
+            }
+        }
+
+        function spawnItem() {
+            if (!bossFightActive && Math.random() < 0.003) {
+                const types = ['invincible', 'bigsword', 'throwsword'];
+                const type = types[Math.floor(Math.random() * types.length)];
+                items.push({
+                    x: Math.random() * (GAME_WIDTH - 300) + 150,
+                    y: -50,
+                    width: 40,
+                    height: 40,
+                    vy: 0,
+                    type: type,
+                    hover: 0
+                });
+            }
+        }
+
+        function update() {
+            if (gameState !== 'PLAYING') return;
+            
+            if (specialAttackEffect > 0) {
+                specialAttackEffect--;
+                if (bossFightActive && currentBoss) {
+                    currentBoss.hp -= 0.5;
+                    let pct = Math.max(0, (currentBoss.hp / currentBoss.maxHp) * 100);
+                    bossHpBar.style.width = pct + '%';
+                    if (currentBoss.hp <= 0) {
+                        endBossFight();
+                    }
+                } else {
+                    for (let i = enemies.length - 1; i >= 0; i--) {
+                        createParticles(enemies[i].x + enemies[i].width/2, enemies[i].y + enemies[i].height/2, '#fff', 20, 2);
+                        enemies.splice(i, 1);
+                        scoreInStage++;
+                    }
+                    scoreVal.innerText = scoreInStage;
+                }
+                return;
+            }
+
+            if (player.dashCooldown > 0) player.dashCooldown--;
+            if (keys.Shift && player.dashCooldown <= 0 && !player.isDash) {
+                player.isDash = true;
+                player.dashTimer = 15;
+                player.dashCooldown = 50;
+            }
+
+            if (player.isDash) {
+                player.vx = lastDir * 14;
+                player.dashTimer--;
+                if (player.dashTimer <= 0) player.isDash = false;
+            } else {
+                if (keys.ArrowLeft) { player.vx = -player.speed; lastDir = -1; }
+                else if (keys.ArrowRight) { player.vx = player.speed; lastDir = 1; }
+                else { player.vx = 0; }
+            }
+
+            player.isCrouching = (keys.z || keys.Z) && !player.isDash;
+            let currentHeight = player.isCrouching ? player.height * 0.6 : player.height;
+            let currentY = player.isCrouching ? player.y + player.height * 0.4 : player.y;
+
+            let jumpPressed = keys.a || keys.A;
+            if (jumpPressed && !jumpKeyWasPressed) {
+                if (player.isGrounded) {
+                    player.vy = player.jumpPower;
+                    player.isGrounded = false;
+                    player.jumpCount = 1;
+                    jumpKeyWasPressed = true;
+                } else if (player.jumpCount < player.maxJumps) {
+                    player.vy = player.jumpPower * 0.9;
+                    player.jumpCount++;
+                    jumpKeyWasPressed = true;
+                    createParticles(player.x + player.width/2, player.y + player.height, '#3498db', 10);
+                }
+            }
+
+            if (keys.q || keys.Q) {
+                if (player.charge < player.maxCharge) {
+                    player.charge++;
+                    if (player.charge % 10 === 0) {
+                        createParticles(player.x + player.width/2, currentY + currentHeight, '#f1c40f', 1, 0.5);
+                    }
+                } else if (player.charge >= player.maxCharge) {
+                    player.charge = 0;
+                    specialAttackEffect = 60; 
+                    createParticles(player.x + player.width/2, currentY, '#00ffff', 100, 3);
+                }
+            } else {
+                if(player.charge > 0) player.charge -= 2; 
+                if(player.charge < 0) player.charge = 0;
+            }
+            
+            let chargePct = Math.floor((player.charge / player.maxCharge) * 100);
+            chargeBar.style.width = chargePct + '%';
+            chargeText.innerText = chargePct >= 100 ? "必殺技 発動!!" : `必殺技 (Q長押し): ${chargePct}%`;
+
+            if (player.attackCooldown > 0) player.attackCooldown--;
+            if (player.attackDuration > 0) player.attackDuration--;
+            
+            attackHitbox = null;
+            if (keys[' '] && player.attackCooldown <= 0) {
+                player.attackCooldown = 18;
+                player.attackDuration = 14; 
+                
+                if (player.throwSwordTimer > 0) {
+                    let pw = player.bigSwordTimer > 0 ? 80 : 40;
+                    let ph = player.bigSwordTimer > 0 ? 20 : 10;
+                    projectiles.push({
+                        x: lastDir === 1 ? player.x + player.width : player.x - pw,
+                        y: currentY + currentHeight/2 - ph/2,
+                        width: pw,
+                        height: ph,
+                        vx: lastDir * 16,
+                        big: player.bigSwordTimer > 0
+                    });
+                }
+            }
+
+            if (player.attackDuration > 0) {
+                let swordWidth = player.bigSwordTimer > 0 ? 120 : 65;
+                let swordHeight = player.bigSwordTimer > 0 ? 60 : 35;
+                
+                attackHitbox = {
+                    x: lastDir === 1 ? player.x + player.width - 10 : player.x - swordWidth + 10,
+                    y: currentY + currentHeight/2 - swordHeight/2,
+                    width: swordWidth,
+                    height: swordHeight
+                };
+            }
+
+            player.vy += player.gravity;
+            player.x += player.vx;
+            player.y += player.vy;
+
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.width > GAME_WIDTH) player.x = GAME_WIDTH - player.width;
+
+            if (player.y + player.height > GROUND_Y) {
+                player.y = GROUND_Y - player.height;
+                player.vy = 0;
+                player.isGrounded = true;
+                player.jumpCount = 0;
+            }
+
+            if(player.invincibleTimer > 0) player.invincibleTimer--;
+            if(player.bigSwordTimer > 0) player.bigSwordTimer--;
+            if(player.throwSwordTimer > 0) player.throwSwordTimer--;
+            if(player.damageInvincibleTimer > 0) player.damageInvincibleTimer--;
+
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                let p = projectiles[i];
+                p.x += p.vx;
+                if (p.x < -150 || p.x > GAME_WIDTH + 150) projectiles.splice(i, 1);
+            }
+
+            for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+                let ep = enemyProjectiles[i];
+                ep.x += ep.vx;
+                if (ep.x < -100 || ep.x > GAME_WIDTH + 100) {
+                    enemyProjectiles.splice(i, 1);
+                } else {
+                    let playerRect = { x: player.x, y: currentY, width: player.width, height: currentHeight };
+                    if (checkCollision(playerRect, ep)) {
+                        enemyProjectiles.splice(i, 1);
+                        if (player.invincibleTimer <= 0 && player.damageInvincibleTimer <= 0 && !player.isDash) {
+                            player.hp--;
+                            updateHpDisplay();
+                            player.damageInvincibleTimer = 90;
+                            createParticles(player.x + player.width/2, currentY + currentHeight/2, '#e74c3c');
+                            if (player.hp <= 0) {
+                                finalStageVal.innerText = currentStage;
+                                setScreen('GAMEOVER');
+                            }
+                        }
+                    }
+                }
+            }
+
+            spawnTraps();
+            for (let i = traps.length - 1; i >= 0; i--) {
+                let tr = traps[i];
+                tr.y += tr.vy;
+                if (tr.y + tr.height > GROUND_Y) {
+                    createParticles(tr.x + tr.width/2, GROUND_Y, '#7f8c8d', 5);
+                    traps.splice(i, 1);
+                    continue;
+                }
+                let playerRect = { x: player.x, y: currentY, width: player.width, height: currentHeight };
+                if (checkCollision(playerRect, tr)) {
+                    traps.splice(i, 1);
+                    if (player.invincibleTimer <= 0 && player.damageInvincibleTimer <= 0 && !player.isDash) {
+                        player.hp--;
+                        updateHpDisplay();
+                        player.damageInvincibleTimer = 90;
+                        createParticles(player.x + player.width/2, currentY + currentHeight/2, '#e74c3c');
+                        if (player.hp <= 0) {
+                            finalStageVal.innerText = currentStage;
+                            setScreen('GAMEOVER');
+                        }
+                    }
+                }
+            }
+
+            spawnItem();
+            let playerRect = { x: player.x, y: currentY, width: player.width, height: currentHeight };
+            
+            for (let i = items.length - 1; i >= 0; i--) {
+                let item = items[i];
+                item.vy += 0.3;
+                item.y += item.vy;
+                if (item.y + item.height > GROUND_Y) {
+                    item.y = GROUND_Y - item.height;
+                    item.vy = 0;
+                }
+                item.hover += 0.1;
+
+                if (checkCollision(playerRect, item)) {
+                    if (item.type === 'invincible') player.invincibleTimer = 400; 
+                    if (item.type === 'bigsword') player.bigSwordTimer = 600; 
+                    if (item.type === 'throwsword') player.throwSwordTimer = 600; 
+                    createParticles(item.x + item.width/2, item.y + item.height/2, '#f1c40f');
+                    items.splice(i, 1);
+                }
+            }
+
+            if (bossFightActive && currentBoss) {
+                currentBoss.x += currentBoss.vx;
+                if (currentBoss.x <= 50 || currentBoss.x >= GAME_WIDTH - currentBoss.width - 50) {
+                    currentBoss.vx *= -1;
+                }
+                currentBoss.wobble += 0.15;
+                if (currentBoss.invul > 0) currentBoss.invul--;
+                
+                currentBoss.skillTimer++;
+                if (currentBoss.skillTimer > 120) {
+                    currentBoss.skillTimer = 0;
+                    enemyProjectiles.push({
+                        x: currentBoss.x + currentBoss.width/2,
+                        y: currentBoss.y + currentBoss.height/2,
+                        width: 25, height: 25,
+                        vx: player.x < currentBoss.x ? -7 : 7
+                    });
+                }
+
+                let bossHit = false;
+                if (attackHitbox && currentBoss.invul <= 0 && checkCollision(attackHitbox, currentBoss)) {
+                    bossHit = true;
+                } else {
+                    for(let j = projectiles.length - 1; j >= 0; j--) {
+                        if(currentBoss.invul <= 0 && checkCollision(projectiles[j], currentBoss)) {
+                            bossHit = true;
+                            createParticles(projectiles[j].x + projectiles[j].width/2, projectiles[j].y + projectiles[j].height/2, '#fff');
+                            projectiles.splice(j, 1);
+                            break;
+                        }
+                    }
+                }
+
+                if (bossHit) {
+                    currentBoss.hp--;
+                    currentBoss.invul = 15;
+                    createParticles(currentBoss.x + currentBoss.width/2, currentBoss.y + currentBoss.height/2, '#e74c3c', 10);
+                    let pct = Math.max(0, (currentBoss.hp / currentBoss.maxHp) * 100);
+                    bossHpBar.style.width = pct + '%';
+                    
+                    if (currentBoss.hp <= 0) {
+                        endBossFight();
+                    }
+                }
+
+                if (checkCollision(playerRect, currentBoss)) {
+                    if (player.invincibleTimer > 0) {
+                        currentBoss.hp -= 2;
+                        createParticles(currentBoss.x + currentBoss.width/2, currentBoss.y + currentBoss.height/2, '#f1c40f');
+                    } else if (player.damageInvincibleTimer <= 0 && !player.isDash) {
+                        player.hp--;
+                        updateHpDisplay();
+                        player.damageInvincibleTimer = 90;
+                        createParticles(player.x + player.width/2, currentY + currentHeight/2, '#e74c3c');
+                        if (player.hp <= 0) {
+                            finalStageVal.innerText = currentStage;
+                            setScreen('GAMEOVER');
+                        }
+                    }
+                }
+            } else {
+                spawnEnemy();
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    let enemy = enemies[i];
+                    
+                    if (enemy.type === 'archer') {
+                        if (Math.abs(enemy.x - player.x) > 300) {
+                            enemy.x += enemy.vx;
+                        }
+                        enemy.attackTimer++;
+                        if (enemy.attackTimer > 100) {
+                            enemy.attackTimer = 0;
+                            enemyProjectiles.push({
+                                x: enemy.x + enemy.width/2,
+                                y: enemy.y + enemy.height/2,
+                                width: 15, height: 10,
+                                vx: player.x < enemy.x ? -6 : 6
+                            });
+                        }
+                    } else {
+                        enemy.x += enemy.vx;
+                    }
+
+                    enemy.wobble += 0.2;
+                    if(enemy.invul > 0) enemy.invul--; 
+
+                    let hit = false;
+                    if (attackHitbox && enemy.invul <= 0 && checkCollision(attackHitbox, enemy)) {
+                        hit = true;
+                    } else {
+                        for(let j = projectiles.length - 1; j >= 0; j--) {
+                            if(enemy.invul <= 0 && checkCollision(projectiles[j], enemy)) {
+                                hit = true;
+                                createParticles(projectiles[j].x + projectiles[j].width/2, projectiles[j].y + projectiles[j].height/2, '#fff');
+                                projectiles.splice(j, 1);
+                                break;
+                            }
+                        }
+                    }
+
+                    if (hit) {
+                        enemy.hp--;
+                        enemy.invul = 15; 
+                        createParticles(enemy.x + enemy.width/2, enemy.y + enemy.height/2, '#fff');
+                        
+                        if (enemy.hp <= 0) {
+                            enemies.splice(i, 1);
+                            scoreInStage++;
+                            scoreVal.innerText = scoreInStage;
+                        }
+                        continue; 
+                    }
+
+                    if (checkCollision(playerRect, enemy)) {
+                        if (player.invincibleTimer > 0) {
+                            createParticles(enemy.x + enemy.width/2, enemy.y + enemy.height/2, '#f1c40f');
+                            enemies.splice(i, 1);
+                            scoreInStage++;
+                            scoreVal.innerText = scoreInStage;
+                        } else if (player.damageInvincibleTimer <= 0 && !player.isDash) {
+                            player.hp--;
+                            updateHpDisplay();
+                            player.damageInvincibleTimer = 90; 
+                            createParticles(player.x + player.width/2, currentY + currentHeight/2, '#e74c3c');
+                            
+                            if (player.hp <= 0) {
+                                finalStageVal.innerText = currentStage;
+                                setScreen('GAMEOVER');
+                            }
+                        }
+                    }
+                    
+                    if (enemy.x > GAME_WIDTH + 100) {
+                        enemies.splice(i, 1);
+                    }
+                }
+            }
+
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let pt = particles[i];
+                pt.x += pt.vx;
+                pt.y += pt.vy;
+                pt.life--;
+                if (pt.life <= 0) particles.splice(i, 1);
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+            let stageInfo = stageData[currentStage - 1];
+
+            // 背景
+            ctx.fillStyle = stageInfo.sky;
+            ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+            // 地面
+            ctx.fillStyle = stageInfo.ground;
+            ctx.fillRect(0, GROUND_Y, GAME_WIDTH, GAME_HEIGHT - GROUND_Y);
+            ctx.fillStyle = '#222';
+            ctx.fillRect(0, GROUND_Y, GAME_WIDTH, 8);
+
+            // トラップ描画
+            ctx.fillStyle = '#7f8c8d';
+            for (let tr of traps) {
+                ctx.beginPath();
+                ctx.moveTo(tr.x + tr.width/2, tr.y + tr.height);
+                ctx.lineTo(tr.x, tr.y);
+                ctx.lineTo(tr.x + tr.width, tr.y);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            // アイテム描画
+            for (let item of items) {
+                ctx.save();
+                ctx.translate(item.x + item.width/2, item.y + item.height/2 + Math.sin(item.hover)*5);
+                ctx.fillStyle = '#f1c40f';
+                ctx.beginPath();
+                ctx.arc(0, 0, item.width/2, 0, Math.PI*2);
+                ctx.fill();
+                ctx.fillStyle = '#000';
+                ctx.font = '16px DotGothic16';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                let label = item.type === 'invincible' ? '無' : (item.type === 'bigsword' ? '巨' : '投');
+                ctx.fillText(label, 0, 0);
+                ctx.restore();
+            }
+
+            // 敵描画
+            for (let enemy of enemies) {
+                ctx.fillStyle = enemy.color;
+                ctx.fillRect(enemy.x, enemy.y + Math.sin(enemy.wobble)*3, enemy.width, enemy.height);
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(enemy.x + 8, enemy.y + 8 + Math.sin(enemy.wobble)*3, 6, 6);
+                ctx.fillRect(enemy.x + enemy.width - 14, enemy.y + 8 + Math.sin(enemy.wobble)*3, 6, 6);
+            }
+
+            // ボス描画（修正済み：確実に画面内に描画されるように調整）
+            if (bossFightActive && currentBoss) {
+                ctx.save();
+                ctx.fillStyle = currentBoss.color;
+                let bH = currentBoss.height + Math.sin(currentBoss.wobble)*4;
+                ctx.fillRect(currentBoss.x, currentBoss.y, currentBoss.width, bH);
+                
+                // ボスの目
+                ctx.fillStyle = '#f1c40f';
+                ctx.fillRect(currentBoss.x + 15, currentBoss.y + 15, 12, 12);
+                ctx.fillRect(currentBoss.x + currentBoss.width - 27, currentBoss.y + 15, 12, 12);
+                ctx.restore();
+            }
+
+            // 敵弾描画
+            ctx.fillStyle = '#e74c3c';
+            for (let ep of enemyProjectiles) {
+                ctx.beginPath();
+                ctx.arc(ep.x + ep.width/2, ep.y + ep.height/2, ep.width/2, 0, Math.PI*2);
+                ctx.fill();
+            }
+
+            // プレイヤー描画
+            let currentHeight = player.isCrouching ? player.height * 0.6 : player.height;
+            let currentY = player.isCrouching ? player.y + player.height * 0.4 : player.y;
+
+            if (player.damageInvincibleTimer % 6 < 3) {
+                ctx.save();
+                if (player.invincibleTimer > 0) {
+                    ctx.shadowColor = '#f1c40f';
+                    ctx.shadowBlur = 15;
+                }
+                
+                ctx.fillStyle = player.isDash ? '#3498db' : '#2ecc71';
+                ctx.fillRect(player.x, currentY, player.width, currentHeight);
+
+                ctx.fillStyle = '#fff';
+                let faceX = lastDir === 1 ? player.x + player.width - 18 : player.x + 8;
+                ctx.fillRect(faceX, currentY + 12, 10, 8);
+
+                ctx.restore();
+            }
+
+            // 剣の攻撃エフェクト
+            if (attackHitbox) {
+                ctx.fillStyle = player.bigSwordTimer > 0 ? 'rgba(241, 196, 15, 0.8)' : 'rgba(255, 255, 255, 0.8)';
+                ctx.fillRect(attackHitbox.x, attackHitbox.y, attackHitbox.width, attackHitbox.height);
+            }
+
+            // 投擲剣描画
+            ctx.fillStyle = '#f39c12';
+            for (let p of projectiles) {
+                ctx.fillRect(p.x, p.y, p.width, p.height);
+            }
+
+            // 必殺技演出エフェクト
+            if (specialAttackEffect > 0) {
+                ctx.fillStyle = `rgba(0, 255, 255, ${specialAttackEffect / 60})`;
+                ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+            }
+
+            // パーティクル
+            for (let pt of particles) {
+                ctx.fillStyle = pt.color;
+                ctx.fillRect(pt.x, pt.y, 4, 4);
+            }
+        }
+
+        function loop() {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        // イベントリスナー設定
+        document.getElementById('startBtn').addEventListener('click', () => {
+            initGame();
+        });
+        document.getElementById('nextStageBtn').addEventListener('click', () => {
+            currentStage++;
+            initStage(false);
+        });
+        document.getElementById('restartBtn').addEventListener('click', () => {
+            initGame();
+        });
+        document.getElementById('restartBtnClear').addEventListener('click', () => {
+            initGame();
+        });
+
+        // 初期描画
+        setScreen('START');
+        requestAnimationFrame(loop);
+    </script>
+</body>
+</html>
